@@ -74,7 +74,6 @@ def on_run(args):
     print "Initializing GPIO"
     GPIO.setmode(GPIO.BCM)
     GPIO.setup(gpio_channel, GPIO.IN, pull_up_down=gpio_active_px)
-    print gpio_active_state
 
     print "Running"
     try:
