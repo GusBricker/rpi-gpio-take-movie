@@ -4,13 +4,13 @@ For use on the Raspberry PI to take a movie when a GPIO signals to do so.
 
 
 `rpi-gpio-take-movie.py`
--------------------------
+
 
 On a GPIO pin entering its active state, uses OpenCV to record from a video capture device (tested with PS3 Eyetoy).
 Then sends the video to an end user via Pushbullet.
 
 `rpi-gpio-detect-take-movie.py`
--------------------------
+
 
 Will record a video and send via Pushbullet on after either two conditions are met:.
 - After either a GPIO pin enters its active state.
