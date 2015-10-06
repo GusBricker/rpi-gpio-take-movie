@@ -11,39 +11,6 @@ import os
 import os.path
 from pushbullet import Pushbullet
 
-# Credit: https://github.com/jrosebr1/imutils/blob/b7e36aad0e8240d5ef39a400d4df78253c1f90b8/imutils/convenience.py#L41
-# Copied this function as the library doesn't work properly with an older version of OpenCV (<2.4.5)
-def resize(image, width=None, height=None, inter=cv2.INTER_AREA):
-    # initialize the dimensions of the image to be resized and
-    # grab the image size
-    dim = None
-    (h, w) = image.shape[:2]
-
-    # if both the width and height are None, then return the
-    # original image
-    if width is None and height is None:
-        return image
-
-    # check to see if the width is None
-    if width is None:
-        # calculate the ratio of the height and construct the
-        # dimensions
-        r = height / float(h)
-        dim = (int(w * r), height)
-
-    # otherwise, the height is None
-    else:
-        # calculate the ratio of the width and construct the
-        # dimensions
-        r = width / float(w)
-        dim = (width, int(h * r))
-
-    # resize the image
-    resized = cv2.resize(image, dim, interpolation=inter)
-
-    # return the resized image
-    return resized
-
 def on_send_to_pushbullet(api_key, video_path, msg):
     print "Initializing Pushbullet"
     pb = Pushbullet(api_key)
@@ -106,7 +73,6 @@ def on_run(args):
     video_format = 'XVID'
     api_key = args.api_key
     min_area = args.min_area
-    detect_size = args.detect_size
     threshold = args.threshold
     blur = args.blur
     rebase_period = args.rebase_period
@@ -157,7 +123,6 @@ def on_run(args):
                 continue
 
             # Resize the frame, convert it to grayscale, and blur it
-            frame = resize(frame, width=detect_size)
             gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
             gray = cv2.GaussianBlur(gray, (blur, blur), 0)
 
@@ -251,7 +216,6 @@ parser.add_argument('-gpio_active_high', help='Active high for when the capture 
 parser.add_argument('-gpio_active_low', help='Active low for when the capture should begin.', dest='gpio_active', required=False, action='store_false')
 parser.add_argument('-video_path', help='Local path to save videos.', required=True)
 parser.add_argument('-min_area', help='Minimum area to detect.', type=int, required=True)
-parser.add_argument('-detect_size', help='Size to shrink frames down before running comparing them. This is a speed optimization.', type=int, required=True)
 parser.add_argument('-threshold', help='Threshold to a person.', type=int, required=True)
 parser.add_argument('-blur', help='Size of blur to apply to each frame.', type=int, required=True)
 parser.add_argument('-rebase_period', help='Frequency in seconds to update our base frame (providing the system isnt in the middle of a detection).', type=int, required=True)
