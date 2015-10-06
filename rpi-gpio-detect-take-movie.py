@@ -9,6 +9,7 @@ from cv2 import *
 import RPi.GPIO as GPIO
 import os
 import os.path
+import gc
 from pushbullet import Pushbullet
 
 def on_send_to_pushbullet(api_key, video_path, msg):
@@ -60,7 +61,6 @@ def on_capture_frames(frame_queue, capture, video_rate):
         else:
             print "Sleeping skipped, consider lowering framerate: " + str(frame_period_secs) + " < " + str(sleep_time_secs)
 
-
 def on_run(args):
     gpio_active_state = (GPIO.HIGH if args.gpio_active == True else GPIO.LOW)
     gpio_active_px = (GPIO.PUD_DOWN if args.gpio_active == True else GPIO.PUD_UP)
@@ -80,6 +80,7 @@ def on_run(args):
     post_num_frames = video_rate * args.post_trigger_video_length
     debug = args.debug
     frame_stack = []
+
 
     if not os.path.exists(args.video_path):
         os.makedirs(args.video_path)
@@ -182,7 +183,8 @@ def on_run(args):
                     if count > (pre_num_frames + post_num_frames):
                         detected = False
 
-                        video_writer = None
+                        del video_writer
+                        gc.collect()
 
                         t = threading.Thread(target=on_send_to_pushbullet, args = (api_key, video_path, video_name))
                         t.daemon = True
