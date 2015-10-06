@@ -205,7 +205,7 @@ def on_run(args):
                     video_writer = cv2.VideoWriter(video_path, format, video_rate, (video_xres, video_yres))
                     print "Object Detected: " + video_path
 
-            frame_stack.append(frame)
+            frame_stack.insert(0, frame)
             print "frame_stack length: " + str(len(frame_stack))
 
             # Once detected, record into a video stream and send via Pushbullet
