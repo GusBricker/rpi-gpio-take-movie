@@ -10,7 +10,56 @@ import RPi.GPIO as GPIO
 import os
 import os.path
 import gc
+from BaseHTTPServer import BaseHTTPRequestHandler, HTTPServer
+from SocketServer import ThreadingMixIn
 from pushbullet import Pushbullet
+
+global_frame_queue = Queue.Queue(1)
+
+class Handler(BaseHTTPRequestHandler):
+    def writeHeader(self):
+        self.send_response(200)
+        self.separator = "seperate"
+        self.send_header("Content-type","multipart/x-mixed-replace;boundary=%s" % self.separator)
+        self.end_headers()
+        self.wfile.write("--%s\r\n" % self.separator)
+
+    def writeFrame(self, frame):
+        cv_img = cv2.cv.fromarray(frame)
+        cv2mat=cv.EncodeImage(".jpeg", cv_img, (cv.CV_IMWRITE_JPEG_QUALITY,80))
+        buf=cv2mat.tostring()
+
+        self.wfile.write("Content-type: image/jpeg\r\n")
+        self.wfile.write("\r\n")
+        self.wfile.write(buf)
+        self.wfile.write("\r\n--%s\r\n" % self.separator)
+
+    def do_GET(self):
+        global global_frame_queue
+
+        try:
+            print "Got request: " + self.path
+            stream_index = 0
+            if self.path.endswith("thresh"):
+                stream_index = 1
+            elif self.path.endswith("delta"):
+                stream_index = 2
+
+            self.writeHeader()
+
+            while True:
+                try:
+                    frame = global_frame_queue.get(block=True, timeout=1)[stream_index]
+                except:
+                    continue
+                self.writeFrame(frame)
+
+            return
+        except IOError:
+            self.send_error(404,'File Not Found: %s' % self.path)
+
+class ThreadedHTTPServer(ThreadingMixIn, HTTPServer):
+    pass
 
 def on_send_to_pushbullet(api_key, video_path, msg):
     print "Initializing Pushbullet"
@@ -101,9 +150,14 @@ def on_run(args):
     last_rebase_timestamp = time.time()
 
     frame_queue = Queue.Queue()
-    t = threading.Thread(target=on_capture_frames, args = (frame_queue, capture, video_rate))
-    t.daemon = True
-    t.start()
+    t_cap = threading.Thread(target=on_capture_frames, args = (frame_queue, capture, video_rate))
+    t_cap.daemon = True
+    t_cap.start()
+
+    server = ThreadedHTTPServer((args.web_addr, args.web_port), Handler)
+    t_web = threading.Thread(target=server.serve_forever)
+    t_web.daemon = True
+    t_web.start()
 
     print "Running"
     try:
@@ -171,6 +225,12 @@ def on_run(args):
                     video_writer = cv2.VideoWriter(video_path, format, video_rate, (video_xres, video_yres))
                     print "Object Detected: " + video_path
 
+            try:
+                global_frame_queue.get_nowait()
+            except:
+                pass
+            global_frame_queue.put_nowait([frame, thresh, frame_delta])
+
             frame_stack.insert(0, frame)
             print "frame_stack length: " + str(len(frame_stack))
 
@@ -184,13 +244,14 @@ def on_run(args):
                         detected = False
 
                         del video_writer
-                        gc.collect()
 
                         t = threading.Thread(target=on_send_to_pushbullet, args = (api_key, video_path, video_name))
                         t.daemon = True
                         t.start()
             elif len(frame_stack) >= pre_num_frames:
                 frame_stack.pop()
+
+            gc.collect()
 
     except KeyboardInterrupt:
         print "Quitting"
@@ -221,6 +282,8 @@ parser.add_argument('-min_area', help='Minimum area to detect.', type=int, requi
 parser.add_argument('-threshold', help='Threshold to a person.', type=int, required=True)
 parser.add_argument('-blur', help='Size of blur to apply to each frame.', type=int, required=True)
 parser.add_argument('-rebase_period', help='Frequency in seconds to update our base frame (providing the system isnt in the middle of a detection).', type=int, required=True)
+parser.add_argument('-web_addr', help='Web address to bind too, can be 0.0.0.0 or localhost or any other IPV4 address', required=True)
+parser.add_argument('-web_port', help='Web port to bind too, usually 8080.', type=int, required=True)
 parser.add_argument('-debug', help='Enable debugging.', required=False, action='store_true')
 parser.set_defaults(gpio_active=False)
 parser.set_defaults(func=on_run)
