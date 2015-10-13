@@ -99,7 +99,10 @@ def on_capture_frames(frame_queue, capture, video_rate):
             print "Frame missing!"
             continue
 
-        frame_queue.put(frame)
+        try:
+            frame_queue.put(frame, block=True, timeout=frame_period_secs)
+        except:
+            pass
 
         post_capture_timestamp = current_milli_time()
 
@@ -149,7 +152,7 @@ def on_run(args):
     format = cv2.cv.CV_FOURCC(*video_format)
     last_rebase_timestamp = time.time()
 
-    frame_queue = Queue.Queue()
+    frame_queue = Queue.Queue(10)
     t_cap = threading.Thread(target=on_capture_frames, args = (frame_queue, capture, video_rate))
     t_cap.daemon = True
     t_cap.start()
