@@ -5,29 +5,33 @@ import cv2
 import time
 import threading
 import Queue
-from cv2 import *
 import RPi.GPIO as GPIO
 import os
 import os.path
-import gc
 from BaseHTTPServer import BaseHTTPRequestHandler, HTTPServer
 from SocketServer import ThreadingMixIn
 from pushbullet import Pushbullet
+from distutils.version import LooseVersion, StrictVersion
 
 global_frame_queue = Queue.Queue(1)
 
+def memory_usage_resource():
+    import resource
+    rusage_denom = 1024.
+    mem = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / rusage_denom
+    return mem
+
 class Handler(BaseHTTPRequestHandler):
-    def writeHeader(self):
+    def write_header(self):
         self.send_response(200)
         self.separator = "seperate"
         self.send_header("Content-type","multipart/x-mixed-replace;boundary=%s" % self.separator)
         self.end_headers()
         self.wfile.write("--%s\r\n" % self.separator)
 
-    def writeFrame(self, frame):
-        cv_img = cv2.cv.fromarray(frame)
-        cv2mat=cv.EncodeImage(".jpeg", cv_img, (cv.CV_IMWRITE_JPEG_QUALITY,80))
-        buf=cv2mat.tostring()
+    def write_frame(self, frame):
+        cv2mat = cv2.imencode(".jpeg", frame, (cv2.IMWRITE_JPEG_QUALITY,80))[1]
+        buf = cv2mat.tostring()
 
         self.wfile.write("Content-type: image/jpeg\r\n")
         self.wfile.write("\r\n")
@@ -45,14 +49,14 @@ class Handler(BaseHTTPRequestHandler):
             elif self.path.endswith("delta"):
                 stream_index = 2
 
-            self.writeHeader()
+            self.write_header()
 
             while True:
                 try:
                     frame = global_frame_queue.get(block=True, timeout=1)[stream_index]
                 except:
                     continue
-                self.writeFrame(frame)
+                self.write_frame(frame)
 
             return
         except IOError:
@@ -72,6 +76,7 @@ def on_send_to_pushbullet(api_key, video_path, msg):
 
     print "Sending Video"
     push = pb.push_file(**file_data)
+    del pb
 
     print "Pushbullet Done!"
 
@@ -133,6 +138,9 @@ def on_run(args):
     debug = args.debug
     frame_stack = []
 
+    if LooseVersion(cv2.__version__) < LooseVersion("3.0.0"):
+        print "Require OpenCV 3.0.0 or greater"
+        exit(1)
 
     if not os.path.exists(args.video_path):
         os.makedirs(args.video_path)
@@ -149,7 +157,7 @@ def on_run(args):
     detected = False
     count = 1
     capture = cv2.VideoCapture(video_cap_dev)
-    format = cv2.cv.CV_FOURCC(*video_format)
+    format = cv2.VideoWriter_fourcc(*video_format)
     last_rebase_timestamp = time.time()
 
     frame_queue = Queue.Queue(10)
@@ -200,7 +208,7 @@ def on_run(args):
             # Dilate the thresholded image to fill in holes, then find contours
             # on thresholded image
             thresh = cv2.dilate(thresh, None, iterations=2)
-            (cnts, _) = cv2.findContours(thresh.copy(), cv2.RETR_EXTERNAL,
+            (_, cnts, _) = cv2.findContours(thresh.copy(), cv2.RETR_EXTERNAL,
                 cv2.CHAIN_APPROX_SIMPLE)
 
             if debug == True:
@@ -235,17 +243,21 @@ def on_run(args):
             global_frame_queue.put_nowait([frame, thresh, frame_delta])
 
             frame_stack.insert(0, frame)
-            print "frame_stack length: " + str(len(frame_stack))
+            print "Frame Stack Length: " + str(len(frame_stack))
+            print "Memory Usage: " + str(memory_usage_resource()) + "MB"
 
             # Once detected, record into a video stream and send via Pushbullet
             if detected == True:
                 if len(frame_stack) > 0:
-                    video_writer.write(frame_stack.pop())
+                    f = frame_stack.pop()
+                    video_writer.write(f)
+                    del f
 
                     count += 1
                     if count > (pre_num_frames + post_num_frames):
                         detected = False
 
+                        video_writer.release()
                         del video_writer
 
                         t = threading.Thread(target=on_send_to_pushbullet, args = (api_key, video_path, video_name))
@@ -253,8 +265,6 @@ def on_run(args):
                         t.start()
             elif len(frame_stack) >= pre_num_frames:
                 frame_stack.pop()
-
-            gc.collect()
 
     except KeyboardInterrupt:
         print "Quitting"
