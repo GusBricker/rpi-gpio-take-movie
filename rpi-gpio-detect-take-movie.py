@@ -130,6 +130,7 @@ def on_run(args):
     video_format = 'XVID'
     api_key = args.api_key
     min_area = args.min_area
+    min_detected_frame_count = args.min_time * video_rate
     threshold = args.threshold
     blur = args.blur
     rebase_period = args.rebase_period
@@ -155,6 +156,7 @@ def on_run(args):
     print "Initializing OpenCV"
     base_frame = None
     detected = False
+    detected_frame_count = 0
     count = 1
     capture = cv2.VideoCapture(video_cap_dev)
     format = cv2.VideoWriter_fourcc(*video_format)
@@ -216,17 +218,29 @@ def on_run(args):
                 cv2.imshow("Thresh", thresh)
                 cv2.imshow("Frame Delta", frameDelta)
 
+            objects_in_frame = 0
+
             # Loop over the contours
             for c in cnts:
                 # If the contour is too small, ignore it
                 if cv2.contourArea(c) < min_area:
                     continue
 
+                objects_in_frame += 1
+
                 # Compute the bounding box for the contour, draw it on the frame,
                 # and update the text
                 (x, y, w, h) = cv2.boundingRect(c)
                 cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
 
+            print "Objects in Frame: " + str(objects_in_frame)
+            print "Consecutive Frames Detected in: " + str(detected_frame_count)
+            if objects_in_frame >= 1:
+                detected_frame_count += 1
+            else:
+                detected_frame_count = 0
+
+            if detected_frame_count > min_detected_frame_count:
                 # Detected object on the camera
                 if not detected:
                     count = 1
@@ -234,7 +248,7 @@ def on_run(args):
                     video_name = generate_filename(video_extension)
                     video_path = os.path.join(args.video_path, video_name)
                     video_writer = cv2.VideoWriter(video_path, format, video_rate, (video_xres, video_yres))
-                    print "Object Detected: " + video_path
+                    print "Object(s) Detected: #" + str(objects_in_frame) + ", vid path: " + video_path
 
             try:
                 global_frame_queue.get_nowait()
@@ -255,6 +269,7 @@ def on_run(args):
 
                     count += 1
                     if count > (pre_num_frames + post_num_frames):
+                        detected_frame_count = 0
                         detected = False
 
                         video_writer.release()
@@ -292,6 +307,7 @@ parser.add_argument('-gpio_active_high', help='Active high for when the capture 
 parser.add_argument('-gpio_active_low', help='Active low for when the capture should begin.', dest='gpio_active', required=False, action='store_false')
 parser.add_argument('-video_path', help='Local path to save videos.', required=True)
 parser.add_argument('-min_area', help='Minimum area to detect.', type=int, required=True)
+parser.add_argument('-min_time', help='Minimum time an object has to be detected for.', type=int, required=True)
 parser.add_argument('-threshold', help='Threshold to a person.', type=int, required=True)
 parser.add_argument('-blur', help='Size of blur to apply to each frame.', type=int, required=True)
 parser.add_argument('-rebase_period', help='Frequency in seconds to update our base frame (providing the system isnt in the middle of a detection).', type=int, required=True)
